@@ -487,7 +487,7 @@ test "capture values with while loop" {
         \\};
         \\test {
         \\    var it: Iterator = .{};
-        \\    while (it.next()) |val<?usize>| {
+        \\    while (it.next(b.graph.io)) |val<?usize>| {
         \\        if (val) |v<usize>| { _ = v; }
         \\    } else |e<error{Err1}>| { _ = e; }
         \\}
@@ -678,7 +678,7 @@ fn testInlayHints(source: []const u8, options: Options) !void {
     }
 
     var it = visited.iterator(.{ .kind = .unset });
-    while (it.next()) |index| {
+    while (it.next(b.graph.io)) |index| {
         const hint = hints[index];
         try std.testing.expectEqual(options.kind, hint.kind.?);
         const source_index = offsets.positionToIndex(phr.new_source, hint.position, ctx.server.offset_encoding);

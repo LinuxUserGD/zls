@@ -249,14 +249,14 @@ test "discard capture - while loop with continue" {
         \\test {
         \\    var lines: ?[]const u8 = "";
         \\    var linei: usize = 0;
-        \\    while (lines.next()) |line| : (linei += 1) {}
+        \\    while (lines.next(b.graph.io)) |line| : (linei += 1) {}
         \\}
         \\
     ,
         \\test {
         \\    var lines: ?[]const u8 = "";
         \\    var linei: usize = 0;
-        \\    while (lines.next()) |line| : (linei += 1) {
+        \\    while (lines.next(b.graph.io)) |line| : (linei += 1) {
         \\        _ = line; // autofix
         \\    }
         \\}
@@ -267,14 +267,14 @@ test "discard capture - while loop with continue" {
         \\test {
         \\    var lines: ?[]const u8 = "";
         \\    var linei: usize = 0;
-        \\    while (lines.next()) |line| : (linei += (1 * (2 + 1))) {}
+        \\    while (lines.next(b.graph.io)) |line| : (linei += (1 * (2 + 1))) {}
         \\}
         \\
     ,
         \\test {
         \\    var lines: ?[]const u8 = "";
         \\    var linei: usize = 0;
-        \\    while (lines.next()) |line| : (linei += (1 * (2 + 1))) {
+        \\    while (lines.next(b.graph.io)) |line| : (linei += (1 * (2 + 1))) {
         \\        _ = line; // autofix
         \\    }
         \\}
@@ -284,14 +284,14 @@ test "discard capture - while loop with continue" {
         \\test {
         \\    var lines: ?[]const u8 = "";
         \\    var linei: usize = 0;
-        \\    while (lines.next()) |line| : (linei += ")))".len) {}
+        \\    while (lines.next(b.graph.io)) |line| : (linei += ")))".len) {}
         \\}
         \\
     ,
         \\test {
         \\    var lines: ?[]const u8 = "";
         \\    var linei: usize = 0;
-        \\    while (lines.next()) |line| : (linei += ")))".len) {
+        \\    while (lines.next(b.graph.io)) |line| : (linei += ")))".len) {
         \\        _ = line; // autofix
         \\    }
         \\}

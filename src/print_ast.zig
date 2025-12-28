@@ -14,10 +14,17 @@ pub const RenderOptions = struct {
 pub fn renderToFile(
     tree: *const Ast,
     options: RenderOptions,
-    file: std.fs.File,
-) (std.fs.File.WriteError || std.fs.File.SetEndPosError || std.mem.Allocator.Error)!void {
+    file: std.Io.File,
+) (std.Io.File.Writer.Error || std.Io.File.SetEndPosError || std.mem.Allocator.Error)!void {
     var buffer: [4096]u8 = undefined;
-    var file_writer = file.writer(&buffer);
+
+    const gpa = debug_allocator.allocator();
+
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var file_writer = file.writer(io, &buffer);
     renderToWriter(tree, options, &file_writer.interface) catch |err| switch (err) {
         error.WriteFailed => return file_writer.err.?,
     };
@@ -73,10 +80,16 @@ const PrintAst = struct {
     }
 
     fn renderOptNode(p: *PrintAst, opt_node: Ast.Node.OptionalIndex) std.Io.Writer.Error!void {
+        defer _ = debug_allocator.deinit();
+        const gpa = debug_allocator.allocator();
+
+        var threaded: std.Io.Threaded = .init(gpa, .{});
+        defer threaded.deinit();
+        const io = threaded.io();
         if (opt_node.unwrap()) |node| {
             try p.renderNode(node);
         } else {
-            try p.w.writeAll(".none");
+            try p.w.writeStreamingAll(io,".none");
         }
     }
 
@@ -84,21 +97,28 @@ const PrintAst = struct {
         const tree = p.tree;
         const tag = tree.nodeTag(node);
 
+        defer _ = debug_allocator.deinit();
+        const gpa = debug_allocator.allocator();
+
+        var threaded: std.Io.Threaded = .init(gpa, .{});
+        defer threaded.deinit();
+        const io = threaded.io();
+
         // Compact style for some tags
         switch (tag) {
             .root => {
-                try p.w.writeAll("pub const root = .{");
+                try p.w.writeStreamingAll(io,"pub const root = .{");
                 p.indent += 1;
                 for (tree.rootDecls()) |decl| {
                     try p.renderItem(decl);
                 }
                 p.indent -= 1;
                 try p.newline();
-                try p.w.writeAll("};");
+                try p.w.writeStreamingAll(io,"};");
                 return;
             },
-            .anyframe_literal => return try p.w.writeAll(".anyframe_literal"),
-            .unreachable_literal => return try p.w.writeAll(".anyframe_literal"),
+            .anyframe_literal => return try p.w.writeStreamingAll(io,".anyframe_literal"),
+            .unreachable_literal => return try p.w.writeStreamingAll(io,".anyframe_literal"),
             .char_literal,
             .number_literal,
             .identifier,
@@ -107,31 +127,31 @@ const PrintAst = struct {
             => return try p.w.print(".{t}({s})", .{ tag, tree.tokenSlice(tree.nodeMainToken(node)) }),
             .error_value => return try p.w.print(".error_value({s})", .{tree.tokenSlice(tree.nodeMainToken(node) + 2)}),
             .multiline_string_literal => {
-                try p.w.writeAll(".multiline_string_literal(");
+                try p.w.writeStreamingAll(io,".multiline_string_literal(");
                 p.indent += 1;
                 const start, const end = tree.nodeData(node).token_and_token;
                 for (start..end + 1) |i| {
                     const token: Ast.TokenIndex = @intCast(i);
                     try p.newline();
-                    try p.w.writeAll(tree.tokenSlice(token));
+                    try p.w.writeStreamingAll(io,tree.tokenSlice(token));
                 }
                 p.indent -= 1;
                 try p.newline();
-                try p.w.writeAll(")");
+                try p.w.writeStreamingAll(io,")");
                 return;
             },
             .@"return" => {
                 const opt_expr = tree.nodeData(node).opt_node;
                 if (opt_expr == .none) {
-                    return try p.w.writeAll(".@\"return\"");
+                    return try p.w.writeStreamingAll(io,".@\"return\"");
                 }
             },
             .@"continue", .@"break" => {
                 const opt_label, const opt_expr = tree.nodeData(node).opt_token_and_opt_node;
                 if (opt_label == .none and opt_expr == .none) {
                     switch (tag) {
-                        .@"continue" => return try p.w.writeAll(".@\"continue\""),
-                        .@"break" => return try p.w.writeAll(".@\"break\""),
+                        .@"continue" => return try p.w.writeStreamingAll(io,".@\"continue\""),
+                        .@"break" => return try p.w.writeStreamingAll(io,".@\"break\""),
                         else => unreachable,
                     }
                 }
@@ -534,9 +554,16 @@ const PrintAst = struct {
         const tree = p.tree;
         const options = p.options.trailing_comments orelse return;
 
-        try p.w.writeAll(" // ");
+        defer _ = debug_allocator.deinit();
+        const gpa = debug_allocator.allocator();
+
+        var threaded: std.Io.Threaded = .init(gpa, .{});
+        defer threaded.deinit();
+        const io = threaded.io();
+
+        try p.w.writeStreamingAll(io," // ");
         if (options.filename) |filename| {
-            try p.w.writeAll(filename);
+            try p.w.writeStreamingAll(io,filename);
         }
         p.moveSourceCursor(tree.tokenStart(token));
         try p.w.print(":{d}:{d}", .{ p.current_line + 1, p.current_column + 1 });
@@ -616,6 +643,14 @@ const PrintAst = struct {
         nodes: []const Ast.Node.Index,
         field_name: []const u8,
     ) !void {
+
+        defer _ = debug_allocator.deinit();
+        const gpa = debug_allocator.allocator();
+
+        var threaded: std.Io.Threaded = .init(gpa, .{});
+        defer threaded.deinit();
+        const io = threaded.io();
+
         try p.newline();
         if (nodes.len == 0) {
             return try p.w.print(".{s} = .{{}},", .{field_name});
@@ -627,7 +662,7 @@ const PrintAst = struct {
         }
         p.indent -= 1;
         try p.newline();
-        try p.w.writeAll("},");
+        try p.w.writeStreamingAll(io,"},");
     }
 
     fn moveSourceCursor(p: *PrintAst, source_index: usize) void {
@@ -886,7 +921,7 @@ pub fn main() !u8 {
     defer tree.deinit(gpa);
 
     var buffer: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&buffer);
+    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
 
     renderToWriter(
         &tree,

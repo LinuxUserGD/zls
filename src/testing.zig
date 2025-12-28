@@ -236,9 +236,14 @@ pub fn renderLineDiff(
     std.debug.print("\n======================================\n", .{});
     std.debug.print("\n============ difference: =============\n", .{});
 
-    const stderr = std.fs.File.stderr();
+    const stderr = std.Io.File.stderr();
     const tty_config: std.Io.tty.Config = .detect(stderr);
-    var file_writer = stderr.writer(&.{});
+
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var file_writer = stderr.writer(io, &.{});
     const writer = &file_writer.interface;
 
     for (diff_list.items(.operation), diff_list.items(.text)) |op, text| {

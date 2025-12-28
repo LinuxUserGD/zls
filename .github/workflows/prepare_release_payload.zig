@@ -12,19 +12,19 @@ pub fn main() !void {
     var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     const arena = arena_allocator.allocator();
 
-    const metadata_source = try std.fs.cwd().readFileAlloc("zig-out/release.json", arena, .limited(std.math.maxInt(u32)));
-    const artifacts_dir = try std.fs.cwd().openDir("zig-out/artifacts", .{ .iterate = true });
+    const metadata_source = try std.Io.Dir.cwd(std.Io).readFileAlloc("zig-out/release.json", arena, .limited(std.math.maxInt(u32)));
+    const artifacts_dir = try std.Io.Dir.cwd(std.Io).openDir("zig-out/artifacts", .{ .iterate = true });
     const metadata = try std.json.parseFromSliceLeaky(Metadata, arena, metadata_source, .{});
 
     var buffer: [4096]u8 = undefined;
-    var file_writer = std.fs.File.stdout().writer(&buffer);
+    var file_writer = std.Io.File.stdout().writer(&buffer);
     try createRequestBody(&file_writer.interface, artifacts_dir, metadata, "full");
     try file_writer.interface.flush();
 }
 
 fn createRequestBody(
     writer: *std.Io.Writer,
-    artifacts_dir: std.fs.Dir,
+    artifacts_dir: std.Io.Dir,
     metadata: Metadata,
     compatibility: []const u8,
 ) !void {
@@ -59,7 +59,7 @@ fn createRequestBody(
         try write_stream.beginObject();
 
         var file = try artifacts_dir.openFile(file_name, .{});
-        defer file.close();
+        defer file.close(io);
 
         const stat = try file.stat();
 

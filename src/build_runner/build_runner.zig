@@ -65,22 +65,22 @@ pub fn main() !void {
 
     const zig_lib_directory: std.Build.Cache.Directory = .{
         .path = zig_lib_dir,
-        .handle = try std.fs.cwd().openDir(zig_lib_dir, .{}),
+        .handle = try std.Io.Dir.cwd().openDir(zig_lib_dir, .{}),
     };
 
     const build_root_directory: std.Build.Cache.Directory = .{
         .path = build_root,
-        .handle = try std.fs.cwd().openDir(build_root, .{}),
+        .handle = try std.Io.Dir.cwd().openDir(build_root, .{}),
     };
 
     const local_cache_directory: std.Build.Cache.Directory = .{
         .path = cache_root,
-        .handle = try std.fs.cwd().makeOpenPath(cache_root, .{}),
+        .handle = try std.Io.Dir.cwd().makeOpenPath(cache_root, .{}),
     };
 
     const global_cache_directory: std.Build.Cache.Directory = .{
         .path = global_cache_root,
-        .handle = try std.fs.cwd().makeOpenPath(global_cache_root, .{}),
+        .handle = try std.Io.Dir.cwd().makeOpenPath(global_cache_root, .{}),
     };
 
     var graph: std.Build.Graph = .{
@@ -102,7 +102,7 @@ pub fn main() !void {
         .time_report = false,
     };
 
-    graph.cache.addPrefix(.{ .path = null, .handle = std.fs.cwd() });
+    graph.cache.addPrefix(.{ .path = null, .handle = std.Io.Dir.cwd() });
     graph.cache.addPrefix(build_root_directory);
     graph.cache.addPrefix(local_cache_directory);
     graph.cache.addPrefix(global_cache_directory);
@@ -337,7 +337,7 @@ pub fn main() !void {
         const s = std.fs.path.sep_str;
         const tmp_sub_path = "tmp" ++ s ++ (output_tmp_nonce orelse fatal("missing -Z arg", .{}));
 
-        std.fs.Dir.writeFile(local_cache_directory.handle, .{
+        std.Io.Dir.writeFile(local_cache_directory.handle, .{
             .sub_path = tmp_sub_path,
             .data = buffer.items,
             .flags = .{ .exclusive = true },
@@ -392,7 +392,7 @@ pub fn main() !void {
         fn do(ww: *Watch) void {
             while (true) {
                 var buffer: [1]u8 = undefined;
-                const amt = std.fs.File.stdin().read(&buffer) catch process.exit(1);
+                const amt = std.Io.File.stdin().read(&buffer) catch process.exit(1);
                 if (amt == 0) process.exit(0);
                 switch (buffer[0]) {
                     '\x00' => ww.trigger(),
@@ -1292,8 +1292,12 @@ fn extractBuildInformation(
         .{ .whitespace = .indent_2 },
     );
 
-    var file_writer = std.fs.File.stdout().writer(&.{});
-    file_writer.interface.writeAll(stringified_build_config) catch return file_writer.err.?;
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var file_writer = std.Io.File.stdout().writer(io, &.{});
+    file_writer.interface.writeStreamingAll(io,stringified_build_config) catch return file_writer.err.?;
 }
 
 fn processPkgConfig(
@@ -1503,7 +1507,16 @@ fn serveWatchErrorBundle(
         std.mem.byteSwapAllElements(u32, @constCast(error_bundle.extra)); // trust me bro
     }
 
-    var file_writer = std.fs.File.stdout().writer(&.{});
+
+    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+    defer _ = debug_allocator.deinit();
+    const gpa = debug_allocator.allocator();
+
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var file_writer = std.Io.File.stdout().writer(io, &.{});
     const writer = &file_writer.interface;
 
     var data = [_][]const u8{

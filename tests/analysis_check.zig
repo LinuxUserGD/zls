@@ -49,7 +49,7 @@ pub fn main() Error!void {
 
     var opt_file_path: ?[]const u8 = null;
 
-    while (arg_it.next()) |arg| {
+    while (arg_it.next(b.graph.io)) |arg| {
         if (!std.mem.startsWith(u8, arg, "--")) {
             if (opt_file_path != null) {
                 std.log.err("duplicate source file argument", .{});
@@ -58,14 +58,14 @@ pub fn main() Error!void {
                 opt_file_path = try arena.dupe(u8, arg);
             }
         } else if (std.mem.eql(u8, arg, "--zig-exe-path")) {
-            const temp_zig_exe_path = arg_it.next() orelse {
+            const temp_zig_exe_path = arg_it.next(b.graph.io) orelse {
                 std.log.err("expected argument after '--zig-exe-path'.", .{});
                 std.process.exit(1);
             };
             zig_exe_path = try arena.dupe(u8, temp_zig_exe_path);
         } else if (std.mem.eql(u8, arg, "--zig-lib-path")) {
             std.debug.assert(builtin.target.os.tag != .wasi);
-            const zig_lib_path = arg_it.next() orelse {
+            const zig_lib_path = arg_it.next(b.graph.io) orelse {
                 std.log.err("expected argument after '--zig-lib-path'.", .{});
                 std.process.exit(1);
             };
@@ -78,11 +78,11 @@ pub fn main() Error!void {
                 std.process.exit(1);
             };
 
-            var handle = std.fs.cwd().openDir(resolved_zig_lib_path, .{}) catch |err| {
+            var handle = std.Io.Dir.cwd().openDir(b.graph.io, resolved_zig_lib_path, .{}) catch |err| {
                 std.log.err("failed to open zig library directory '{s}: {}'", .{ resolved_zig_lib_path, err });
                 std.process.exit(1);
             };
-            errdefer handle.close();
+            errdefer handle.close(b.graph.io);
 
             zig_lib_dir = .{
                 .handle = handle,
@@ -136,7 +136,7 @@ pub fn main() Error!void {
         std.process.exit(1);
     };
 
-    const source = std.fs.cwd().readFileAllocOptions(file_path, gpa, .limited(16 * 1024 * 1024), .of(u8), 0) catch |err|
+    const source = std.Io.Dir.cwd().readFileAllocOptions(b.graph.io, file_path, gpa, .limited(16 * 1024 * 1024), .of(u8), 0) catch |err|
         std.debug.panic("failed to read from {s}: {}", .{ file_path, err });
     defer gpa.free(source);
 

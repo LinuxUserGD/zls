@@ -182,7 +182,7 @@ pub fn writeDebug(builder: *const ErrorBuilder) void {
     const stderr, const tty_config = std.debug.lockStderrWriter(&buffer);
     defer std.debug.unlockStderrWriter();
     // does zig trim the output or why is this needed?
-    stderr.writeAll(" ") catch return;
+    stderr.writeStreamingAll(io," ") catch return;
     std.debug.print("\n{f}\n", .{builder.fmt(tty_config)});
 }
 
@@ -228,7 +228,7 @@ fn render(context: FormatContext, writer: *std.Io.Writer) std.Io.Writer.Error!vo
         var last_line_end: usize = 0;
         var last_line_end_with_unified: usize = 0;
 
-        while (it.next()) |line_messages| {
+        while (it.next(b.graph.io)) |line_messages| {
             std.debug.assert(line_messages.len > 0);
 
             const some_line_source_index = line_messages[0].loc.start;

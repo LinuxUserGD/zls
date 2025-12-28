@@ -639,6 +639,10 @@ fn readFile(self: *DocumentStore, uri: Uri) ?[:0]u8 {
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
+    var threaded: std.Io.Threaded = .init(self.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
     const file_path = uri.toFsPath(self.allocator) catch |err| switch (err) {
         error.UnsupportedScheme => return null, // https://github.com/microsoft/language-server-protocol/issues/1264
         error.OutOfMemory => |e| {
@@ -656,7 +660,7 @@ fn readFile(self: *DocumentStore, uri: Uri) ?[:0]u8 {
     const dir, const sub_path = blk: {
         if (builtin.target.cpu.arch.isWasm() and !builtin.link_libc) {
             for (self.config.wasi_preopens.names, 0..) |name, i| {
-                const preopen_dir: std.fs.Dir = .{ .fd = @intCast(i) };
+                const preopen_dir: std.Io.Dir = .{ .fd = @intCast(i) };
                 const preopen_path = std.mem.trimEnd(u8, name, "/");
 
                 if (!std.mem.startsWith(u8, file_path, preopen_path)) continue;
@@ -665,10 +669,11 @@ fn readFile(self: *DocumentStore, uri: Uri) ?[:0]u8 {
                 break :blk .{ preopen_dir, std.mem.trimStart(u8, file_path[preopen_path.len..], "/") };
             }
         }
-        break :blk .{ std.fs.cwd(), file_path };
+        break :blk .{ std.Io.Dir.cwd(), file_path };
     };
 
     return dir.readFileAllocOptions(
+        io,
         sub_path,
         self.allocator,
         .limited(max_document_size),
@@ -1026,12 +1031,16 @@ fn loadBuildAssociatedConfiguration(allocator: std.mem.Allocator, build_file: Bu
     const tracy_zone = tracy.trace(@src());
     defer tracy_zone.end();
 
+    var threaded: std.Io.Threaded = .init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
     const build_file_path = try build_file.uri.toFsPath(allocator);
     defer allocator.free(build_file_path);
     const config_file_path = try std.fs.path.resolve(allocator, &.{ build_file_path, "..", "zls.build.json" });
     defer allocator.free(config_file_path);
 
-    const file_buf = try std.fs.cwd().readFileAlloc(
+    const file_buf = try std.Io.Dir.cwd().readFileAlloc(io,
         config_file_path,
         allocator,
         .limited(16 * 1024 * 1024),
@@ -1103,15 +1112,14 @@ fn loadBuildConfiguration(self: *DocumentStore, build_file_uri: Uri, build_file_
         self.allocator.free(args);
     }
 
+    var threaded: std.Io.Threaded = .init(self.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
     const zig_run_result = blk: {
         const tracy_zone2 = tracy.trace(@src());
         defer tracy_zone2.end();
-        break :blk try std.process.Child.run(.{
-            .allocator = self.allocator,
-            .argv = args,
-            .cwd = cwd,
-            .max_output_bytes = 16 * 1024 * 1024,
-        });
+        break :blk try std.process.Child.run(self.allocator, io, .{ .argv = args });
     };
     defer self.allocator.free(zig_run_result.stdout);
     defer self.allocator.free(zig_run_result.stderr);
@@ -1177,9 +1185,18 @@ fn loadBuildConfiguration(self: *DocumentStore, build_file_uri: Uri, build_file_
 
 /// Checks if the build.zig file is accessible in dir.
 fn buildDotZigExists(dir_path: []const u8) bool {
-    var dir = std.fs.openDirAbsolute(dir_path, .{}) catch return false;
-    defer dir.close();
-    dir.access("build.zig", .{}) catch return false;
+
+    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+    defer _ = debug_allocator.deinit();
+    const gpa = debug_allocator.allocator();
+
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var dir = std.Io.Dir.openDirAbsolute(io, dir_path, .{}) catch return false;
+    defer dir.close(io);
+    dir.access(io, "build.zig", .{}) catch return false;
     return true;
 }
 
@@ -1490,7 +1507,16 @@ pub fn collectIncludeDirs(
         .ofmt = comptime std.Target.ObjectFormat.default(builtin.os.tag, builtin.cpu.arch),
         .dynamic_linker = std.Target.DynamicLinker.none,
     };
-    const native_paths: std.zig.system.NativePaths = try .detect(arena_allocator.allocator(), &target_info);
+
+    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+    defer _ = debug_allocator.deinit();
+    const gpa = debug_allocator.allocator();
+
+    var threaded: std.Io.Threaded = .init(gpa, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const native_paths: std.zig.system.NativePaths = try .detect(arena_allocator.allocator(), io, &target_info);
 
     try include_dirs.ensureUnusedCapacity(allocator, native_paths.include_dirs.items.len);
     for (native_paths.include_dirs.items) |native_include_dir| {

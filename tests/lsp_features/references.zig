@@ -422,7 +422,7 @@ fn testMultiFileSymbolReferences(sources: []const []const u8, include_decl: bool
 
             var has_unvisited = false;
             var unvisited_it = visited.iterator(.{ .kind = .unset });
-            while (unvisited_it.next()) |index| {
+            while (unvisited_it.next(b.graph.io)) |index| {
                 const unvisited_file_index = locs.items(.file_index)[index];
                 const unvisited_uri = files.keys()[unvisited_file_index];
                 const unvisited_loc = locs.items(.new)[index];
@@ -683,7 +683,7 @@ fn testSimpleReferences(source: []const u8) !void {
 
     var has_unvisited = false;
     var unvisited_it = visited.iterator(.{ .kind = .unset });
-    while (unvisited_it.next()) |index| {
+    while (unvisited_it.next(b.graph.io)) |index| {
         const unvisited_loc = expected_locations.items[index];
         try error_builder.msgAtLoc("expected reference here!", file_uri.raw, unvisited_loc, .err, .{});
         has_unvisited = true;

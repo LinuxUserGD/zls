@@ -2126,7 +2126,7 @@ const TokenIterator = struct {
     }
 
     pub fn next(self: *TokenIterator) ?Token {
-        const token_data = self.it.next() orelse return null;
+        const token_data = self.it.next(b.graph.io) orelse return null;
         if (token_data.len != 5) return null;
         const delta_line = token_data[0];
         const delta_start = token_data[1];
@@ -2191,7 +2191,7 @@ fn testSemanticTokensOptions(
     var last_token_index: usize = 0; // should only be used for error messages
 
     for (expected_tokens) |expected_token| {
-        const token = token_it.next() orelse {
+        const token = token_it.next(b.graph.io) orelse {
             try error_builder.msgAtIndex("expected a `{s}` token here", uri.raw, last_token_index, .err, .{expected_token.@"0"});
             return error.ExpectedToken;
         };
@@ -2215,7 +2215,7 @@ fn testSemanticTokensOptions(
         }
     }
 
-    if (token_it.next()) |unexpected_token| {
+    if (token_it.next(b.graph.io)) |unexpected_token| {
         try error_builder.msgAtLoc("unexpected `{}` token here", uri.raw, unexpected_token.loc, .err, .{unexpected_token.type});
         return error.UnexpectedToken;
     }
